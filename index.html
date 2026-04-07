@@ -239,7 +239,7 @@
             physicsMaterial = new CANNON.Material("physics");
             const contactMaterial = new CANNON.ContactMaterial(physicsMaterial, physicsMaterial, {
                 friction: 0.1,
-                restitution: 0.8
+                restitution: 0.4
             });
             world.addContactMaterial(contactMaterial);
 
@@ -345,7 +345,7 @@
                 group.isWicketGroup = true;
                 for (let i = -1; i <= 1; i++) {
                     const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.85), wicketMat);
-                    const sx = i * 0.12;
+                    const sx = i * 0.10; // Closer together to prevent ball passing through
                     const sz = zSide * PITCH_LENGTH / 2;
                     stump.position.set(sx, 0.425, sz);
                     group.add(stump);
@@ -577,27 +577,25 @@
             else if (rng < 0.95) deliveryType = 'KEEPER_MISS';
             else deliveryType = 'WIDE_BOUNCER';
 
-            let targetHeightAtStumps = 0.4; // Target hit height on stumps
-            if (deliveryType === 'STUMP_HIT') targetHeightAtStumps = 0.2 + Math.random() * 0.4;
-            if (deliveryType === 'KEEPER_MISS') targetHeightAtStumps = 0.9 + Math.random() * 0.5;
-            if (deliveryType === 'WIDE_BOUNCER') targetHeightAtStumps = 2.6 + Math.random() * 0.5;
-
-            const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 5 + 3; 
+            const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 4 + 4; 
             const targetZ = STRIKER_POS.z - pitchAhead; 
-            const driftX = (deliveryType === 'STUMP_HIT') ? (Math.random() - 0.5) * 0.05 : (Math.random() - 0.5) * 0.8;
+            
+            // Tighter aim for STUMP_HIT (nearly always hits middle/off/leg stumps)
+            const driftX = (deliveryType === 'STUMP_HIT') ? (Math.random() - 0.5) * 0.08 : (Math.random() - 0.5) * 0.7;
             
             const speed = currentBowlerType === 'FAST' ? 38 + Math.random() * 5 : 22 + Math.random() * 3;
             const vZ = speed;
-            const t1 = (targetZ - ballBody.position.z) / vZ; // Time to pitch
-            const t2 = (10 - targetZ) / vZ; // Time from pitch to stumps
+            const timeToPitch = (targetZ - ballBody.position.z) / vZ;
+            
             const g = -9.82;
-            const restitution = 0.8;
+            let targetHeightAtPitch = 0.07;
+            
+            // Tune bounce for the user's new 0.4 restitution
+            if (deliveryType === 'KEEPER_MISS') targetHeightAtPitch = 0.08; 
+            if (deliveryType === 'STUMP_HIT') targetHeightAtPitch = 0.04; 
+            if (deliveryType === 'WIDE_BOUNCER') targetHeightAtPitch = 0.45; // Need more bounce for wide with low restitution
 
-            // Solving for vY using bounce logic:
-            // vY_after = -0.8 * (vY + g * t1)
-            // H_stumps = H_pitch + vY_after * t2 + 0.5 * g * t2^2
-            // 0.07 - 0.8 * (vY + g * t1) * t2 + 0.5 * g * t2^2 = targetHeightAtStumps
-            const vY = ((targetHeightAtStumps - 0.07 - 0.5 * g * t2 * t2) / (-restitution * t2)) - g * t1;
+            const vY = (targetHeightAtPitch - ballBody.position.y - 0.5 * g * timeToPitch * timeToPitch) / timeToPitch;
             
             const timeToStumps = (10 - ballBody.position.z) / vZ;
             const vX = (driftX - ballBody.position.x) / timeToStumps;
