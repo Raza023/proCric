@@ -179,6 +179,8 @@
             <div class="key-hint"><span class="key">L</span> LEAVE</div>
             <div class="key-hint"><span class="key">MOUSE</span> AIM</div>
         </div>
+
+        <button onclick="toggleHandedness()" style="position: absolute; bottom: 100px; right: 20px; pointer-events: auto; background: #00ffee; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-family: inherit; font-weight: bold;">TOGGLE L/R STANCE</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -189,7 +191,7 @@
         const PITCH_WIDTH = 3;
         const PITCH_LENGTH = 20;
         const BOUNDARY_RADIUS = 60;
-        const STRIKER_POS = new THREE.Vector3(0, 0, PITCH_LENGTH / 2 - 1);
+        const STRIKER_POS = new THREE.Vector3(0.5, 0, PITCH_LENGTH / 2 - 2); // Stand beside and ahead
         const BOWL_POS = new THREE.Vector3(0, 5, -PITCH_LENGTH / 2);
 
         // --- GAME STATE ---
@@ -201,6 +203,8 @@
         let mouseX = 0;
         let lastTiming = 0;
         let isGameOver = false;
+        let wickets = 0;
+        let batsmanHand = 'RIGHT'; // 'RIGHT' or 'LEFT'
 
         // --- THREE.JS GLOBALS ---
         let scene, camera, renderer, world;
@@ -315,14 +319,61 @@
         }
 
         function createPlayers() {
+            // Cleanup existing if any
+            if (fielders.length > 0) {
+                fielders.forEach(f => scene.remove(f.mesh));
+                fielders = [];
+            }
+            if (ballMesh) scene.remove(ballMesh);
+            if (ballBody) world.removeBody(ballBody);
+            // Stumps
+            scene.traverse(child => {
+                if (child.physicsBody) {
+                    world.removeBody(child.physicsBody);
+                }
+            });
+            // Wickets
+            const toRemove = [];
+            scene.children.forEach(c => { if (c.isWicketGroup) toRemove.push(c); });
+            toRemove.forEach(c => scene.remove(c));
+            
             // Wickets
             const wicketMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
             for (let zSide of [1, -1]) {
                 const group = new THREE.Group();
+                group.isWicketGroup = true;
                 for (let i = -1; i <= 1; i++) {
                     const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7), wicketMat);
-                    stump.position.set(i * 0.12, 0.35, zSide * PITCH_LENGTH / 2);
+                    const sx = i * 0.12;
+                    const sz = zSide * PITCH_LENGTH / 2;
+                    stump.position.set(sx, 0.35, sz);
                     group.add(stump);
+
+                    // Add physics to striker-end stumps
+                    if (zSide === 1) {
+                        const sBody = new CANNON.Body({
+                            mass: 1.0, // A bit heavier for stability
+                            material: physicsMaterial,
+                            position: new CANNON.Vec3(sx, 0.35, sz)
+                        });
+                        // Rotate cylinder shape to stand vertical (along Y axis)
+                        const q = new CANNON.Quaternion();
+                        q.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+                        sBody.addShape(new CANNON.Cylinder(0.04, 0.04, 0.7, 8), new CANNON.Vec3(0,0,0), q);
+                        sBody.initPosition = new CANNON.Vec3(sx, 0.35, sz);
+                        sBody.quaternion.set(0, 0, 0, 1);
+                        world.addBody(sBody);
+                        
+                        // Collision detection
+                        sBody.addEventListener("collide", (e) => {
+                            if (e.body === ballBody && isBallInPlay && !isBallHit) {
+                                handleOut("BOWLED!");
+                            }
+                        });
+                        
+                        // Link mesh to body (only for striker end to animate movement)
+                        stump.physicsBody = sBody;
+                    }
                 }
                 scene.add(group);
             }
@@ -367,19 +418,41 @@
             bowlerObj = createFielder(0, -PITCH_LENGTH / 2 - 4.5, 'BOWLER');
 
             // --- BATSMAN ---
+            const side = batsmanHand === 'RIGHT' ? 1 : -1; 
+            // --- BATSMAN ---
+            STRIKER_POS.x = -0.5 * side; // RHS at -0.5, LHS at 0.5
+            
             batsmanObj = createFielder(STRIKER_POS.x, STRIKER_POS.z + 0.5, 'BATSMAN');
-            // Attach bat to batsman's arms
+            
+            // Tilt batsman toward the stumps
+            batsmanObj.mesh.rotation.z = 0.2 * side; // Tilt toward stumps (RHS at -0.5 tilts +X)
+            batsmanObj.mesh.rotation.y = Math.PI / 2 * side; // RHS faces +X, LHS faces -X
+            
+            // Attach bat
             batGroup = new THREE.Group();
             const batBlade = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.8, 0.08), new THREE.MeshStandardMaterial({ color: 0x664422 }));
-            batBlade.position.y = -0.4; // relative to handle pivot
+            batBlade.position.y = -0.6; // Blade below handle
             const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-            handle.position.y = 0;
-            batGroup.add(batBlade); batGroup.add(handle);
+            handle.position.y = 0; // Grip point at (0,0,0)
+            batGroup.add(batBlade, handle);
 
-            // Initial position: handle at waist height
-            batGroup.position.set(0.3, 0.8, 0);
+            // Position bat "in both hands" and "facing stumps"
+            // To point toward bowler: RHS faces +X, so local +X is bowler. LHS faces -X, local -X is bowler.
+            // To point toward stumps: RHS at -0.5 reaches +X (local +Z). LHS at 0.5 reaches -X (local +Z).
+            batGroup.position.set(0.15 * side, 0.6, 0.35 ); 
+            batGroup.rotation.set(0.3, -0.4 * side, 0.8 * side);
+            
             batsmanObj.mesh.add(batGroup);
             batsmanObj.bat = batGroup;
+            
+            // Adjust arms to "grab" the bat handle with BOTH hands
+            // Bring hands to meet the bat handle
+            batsmanObj.lArm.position.set(-0.15, 1.1, 0.05); 
+            batsmanObj.rArm.position.set(0.15, 1.1, 0.05);
+            
+            // Aim arms at the bat handle position
+            batsmanObj.lArm.rotation.set(-0.8, -0.2, 0.4 * side);
+            batsmanObj.rArm.rotation.set(-0.8, 0.2, -0.4 * side);
         }
 
         function createFielder(x, z, type) {
@@ -484,13 +557,13 @@
             ballBody.position.set(0, 2.8, -PITCH_LENGTH / 2);
             ballBody.velocity.set(0, 0, 0);
 
-            const targetX = (Math.random() - 0.5) * 0.3;
-            const targetZ = STRIKER_POS.z;
-            const speed = currentBowlerType === 'FAST' ? 35 : 20;
+            const targetX = (Math.random() - 0.5) * 0.4; // Slight variation around middle stump
+            const targetZ = STRIKER_POS.z - 4; // Pitch ahead of batsman (around 4m ahead)
+            const speed = currentBowlerType === 'FAST' ? 38 : 22;
             const dirX = targetX - ballBody.position.x;
             const dirZ = targetZ - ballBody.position.z;
             const dist = Math.sqrt(dirX * dirX + dirZ * dirZ);
-            const vY = currentBowlerType === 'FAST' ? -1.8 : 3.0;
+            const vY = currentBowlerType === 'FAST' ? -1.0 : 1.5;
 
             ballBody.velocity.set(dirX / dist * speed, vY, dirZ / dist * speed);
             if (currentBowlerType === 'SPIN') ballBody.angularVelocity.set(0, (Math.random() - 0.5) * 20, 0);
@@ -540,13 +613,17 @@
                 const t = Math.min(1, elapsed / 250);
 
                 // Batsman body and arm rotation
-                batsmanObj.mesh.rotation.y = swingTarget * 0.5;
-                batsmanObj.lArm.rotation.x = -Math.PI / 1.5 * Math.sin(t * Math.PI);
-                batsmanObj.rArm.rotation.x = -Math.PI / 1.5 * Math.sin(t * Math.PI);
+                const side = batsmanHand === 'RIGHT' ? 1 : -1;
+                batsmanObj.mesh.rotation.y = (Math.PI / 2 * side) + swingTarget * 0.5;
+                
+                // Swing animation: relative to initial stance
+                const swingPhase = Math.sin(t * Math.PI);
+                batsmanObj.lArm.rotation.x = -0.8 - (Math.PI / 1.5 * swingPhase);
+                batsmanObj.rArm.rotation.x = -0.8 - (Math.PI / 1.5 * swingPhase);
 
-                // Bat logic: handle the pivot correctly
+                // Bat logic: pivot correctly and follow arms
                 if (batsmanObj.bat) {
-                    batsmanObj.bat.rotation.x = -Math.PI / 1.2 * Math.sin(t * Math.PI);
+                    batsmanObj.bat.rotation.x = - (Math.PI / 1.2 * swingPhase);
                 }
 
                 const dist = ballMesh.position.distanceTo(new THREE.Vector3(STRIKER_POS.x, 1.0, STRIKER_POS.z));
@@ -559,7 +636,9 @@
                 if (t >= 1) {
                     clearInterval(interval);
                     batState = 'idle';
-                    batsmanObj.lArm.rotation.x = 0; batsmanObj.rArm.rotation.x = 0;
+                    // Return to stance
+                    batsmanObj.lArm.rotation.x = -0.8;
+                    batsmanObj.rArm.rotation.x = -0.8;
                     if (batsmanObj.bat) batsmanObj.bat.rotation.x = 0;
                 }
             }, 16);
@@ -581,6 +660,18 @@
             const kY = type === 'LOFT' ? 0.75 : 0.05;
             ballBody.velocity.set(kX * baseSpeed * power, kY * baseSpeed * power, kZ * baseSpeed * power);
             showFeedback(feedback);
+        }
+
+        function handleOut(txt) {
+            if (!isBallInPlay) return;
+            showFeedback(txt);
+            wickets++;
+            updateHUD();
+            isBallInPlay = false;
+            isBallHit = false;
+            
+            // Wait, then reset the ball
+            setTimeout(resetBall, 2000);
         }
 
         function showFeedback(txt) {
@@ -651,12 +742,28 @@
             isBallInPlay = false; ballBody.position.set(0, -10, 0); ballBody.velocity.set(0, 0, 0); updateHUD();
             isBallHit = false;
             cameraState = 'fixed';
+            
+            // Reset Wickets
+            scene.traverse(child => {
+                if (child.physicsBody) {
+                    const b = child.physicsBody;
+                    b.position.set(b.initPosition.x, b.initPosition.y, b.initPosition.z);
+                    b.quaternion.set(0, 0, 0, 1);
+                    b.velocity.set(0,0,0);
+                    b.angularVelocity.set(0,0,0);
+                }
+            });
+
             setTimeout(bowl, 2500);
         }
 
         function updateHUD() {
             document.getElementById('score').textContent = score;
             document.getElementById('overs').textContent = Math.floor(ballsBowled / 6) + "." + (ballsBowled % 6);
+            
+            // Add wickets display next to score if you want, but for now just update log or score
+            // Let's assume the score is Score/Wickets
+            document.getElementById('score').textContent = score + " / " + wickets;
         }
 
         function animate() {
@@ -664,6 +771,14 @@
             world.step(1 / 60);
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
+
+            // Update stump meshes from their physical bodies
+            scene.traverse(child => {
+                if (child.physicsBody) {
+                    child.position.copy(child.physicsBody.position);
+                    child.quaternion.copy(child.physicsBody.quaternion);
+                }
+            });
 
             updateFielding();
 
@@ -705,6 +820,13 @@
             init();
             setTimeout(bowl, 2000);
         }
+        function toggleHandedness() {
+            batsmanHand = (batsmanHand === 'RIGHT') ? 'LEFT' : 'RIGHT';
+            createPlayers();
+            // Reset ball position immediately after recreation
+            ballBody.position.set(0, -10, 0);
+        }
+
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
