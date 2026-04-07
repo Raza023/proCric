@@ -344,10 +344,10 @@
                 const group = new THREE.Group();
                 group.isWicketGroup = true;
                 for (let i = -1; i <= 1; i++) {
-                    const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7), wicketMat);
+                    const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.85), wicketMat);
                     const sx = i * 0.12;
                     const sz = zSide * PITCH_LENGTH / 2;
-                    stump.position.set(sx, 0.35, sz);
+                    stump.position.set(sx, 0.425, sz);
                     group.add(stump);
 
                     // Add physics to striker-end stumps
@@ -355,13 +355,13 @@
                         const sBody = new CANNON.Body({
                             mass: 1.0, // A bit heavier for stability
                             material: physicsMaterial,
-                            position: new CANNON.Vec3(sx, 0.35, sz)
+                            position: new CANNON.Vec3(sx, 0.425, sz)
                         });
                         // Rotate cylinder shape to stand vertical (along Y axis)
                         const q = new CANNON.Quaternion();
                         q.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
-                        sBody.addShape(new CANNON.Cylinder(0.04, 0.04, 0.7, 8), new CANNON.Vec3(0,0,0), q);
-                        sBody.initPosition = new CANNON.Vec3(sx, 0.35, sz);
+                        sBody.addShape(new CANNON.Cylinder(0.04, 0.04, 0.85, 8), new CANNON.Vec3(0,0,0), q);
+                        sBody.initPosition = new CANNON.Vec3(sx, 0.425, sz);
                         sBody.quaternion.set(0, 0, 0, 1);
                         world.addBody(sBody);
                         
@@ -571,24 +571,33 @@
             ballBody.position.set(0, 2.8, -PITCH_LENGTH / 2);
             ballBody.velocity.set(0, 0, 0);
 
-            const isBouncerAttempt = Math.random() < 0.15; // 15% bouncers
-            const pitchAhead = isBouncerAttempt ? Math.random() * 3 + 8 : Math.random() * 4 + 4; 
+            const rng = Math.random();
+            let deliveryType = 'KEEPER_MISS';
+            if (rng < 0.50) deliveryType = 'STUMP_HIT';
+            else if (rng < 0.95) deliveryType = 'KEEPER_MISS';
+            else deliveryType = 'WIDE_BOUNCER';
+
+            let targetHeightAtStumps = 0.4; // Target hit height on stumps
+            if (deliveryType === 'STUMP_HIT') targetHeightAtStumps = 0.2 + Math.random() * 0.4;
+            if (deliveryType === 'KEEPER_MISS') targetHeightAtStumps = 0.9 + Math.random() * 0.5;
+            if (deliveryType === 'WIDE_BOUNCER') targetHeightAtStumps = 2.6 + Math.random() * 0.5;
+
+            const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 5 + 3; 
             const targetZ = STRIKER_POS.z - pitchAhead; 
-            const driftX = (Math.random() - 0.5) * 0.15; // Very tight aim for stumps
+            const driftX = (deliveryType === 'STUMP_HIT') ? (Math.random() - 0.5) * 0.05 : (Math.random() - 0.5) * 0.8;
             
             const speed = currentBowlerType === 'FAST' ? 38 + Math.random() * 5 : 22 + Math.random() * 3;
-            
             const vZ = speed;
-            const timeToPitch = (targetZ - ballBody.position.z) / vZ;
-            
+            const t1 = (targetZ - ballBody.position.z) / vZ; // Time to pitch
+            const t2 = (10 - targetZ) / vZ; // Time from pitch to stumps
             const g = -9.82;
-            const targetHeightAtStumps = isBouncerAttempt ? 2.8 : 0.35 + Math.random() * 0.2; // Targeting middle of stumps (0.7m high)
-            
             const restitution = 0.8;
-            const timeFromPitchToStumps = (10 - targetZ) / vZ;
-            
-            // Simplified vY target for hitting stumps after bounce.
-            const vY = (0.07 - ballBody.position.y - 0.5 * g * timeToPitch * timeToPitch) / timeToPitch;
+
+            // Solving for vY using bounce logic:
+            // vY_after = -0.8 * (vY + g * t1)
+            // H_stumps = H_pitch + vY_after * t2 + 0.5 * g * t2^2
+            // 0.07 - 0.8 * (vY + g * t1) * t2 + 0.5 * g * t2^2 = targetHeightAtStumps
+            const vY = ((targetHeightAtStumps - 0.07 - 0.5 * g * t2 * t2) / (-restitution * t2)) - g * t1;
             
             const timeToStumps = (10 - ballBody.position.z) / vZ;
             const vX = (driftX - ballBody.position.x) / timeToStumps;
