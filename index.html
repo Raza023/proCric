@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate 3D Cricket Champion</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050a10;
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* HUD & UI Overlay */
+        #game-ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .scoreboard {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            padding: 15px 25px;
+            border-radius: 12px;
+            border-left: 5px solid #00ffee;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .score-row {
+            font-size: 24px;
+            font-weight: 700;
+            color: #eee;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .score-val {
+            color: #00ffee;
+            font-size: 32px;
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px 30px;
+            border-radius: 40px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .key-hint {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .key {
+            background: #fff;
+            color: #000;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 700;
+            min-width: 15px;
+            text-align: center;
+        }
+
+        .bowl-type {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 18px;
+            color: #ffaa00;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .shot-feedback {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 60px;
+            font-weight: 900;
+            text-shadow: 0 0 20px rgba(0, 255, 238, 0.5);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            color: #00ffee;
+            pointer-events: none;
+        }
+
+        .shot-feedback.show {
+            opacity: 1;
+            transform: translate(-50%, -60%) scale(1.2);
+        }
+
+        #start-overlay {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, #1a2a40 0%, #050a10 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .start-title {
+            font-size: 70px;
+            font-weight: 900;
+            color: #fff;
+            margin-bottom: 30px;
+            text-shadow: 0 0 30px #00ffee;
+        }
+
+        .start-btn {
+            padding: 15px 50px;
+            font-size: 20px;
+            background: #00ffee;
+            color: #000;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 700;
+            transition: all 0.3s;
+            box-shadow: 0 0 20px rgba(0, 255, 238, 0.4);
+        }
+
+        .start-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 40px rgba(0, 255, 238, 0.7);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="start-overlay">
+        <h1 class="start-title">CRICKET PRO 3D</h1>
+        <button class="start-btn" onclick="startGame()">ENTER THE STADIUM</button>
+    </div>
+
+    <div id="game-ui">
+        <div class="scoreboard">
+            <div class="score-row">RUNS: <span id="score" class="score-val">0</span></div>
+            <div class="score-row" style="font-size: 16px; margin-top: 5px;">OVERS: <span id="overs"
+                    style="color: #bbb;">0.0</span> / 2.0</div>
+        </div>
+
+        <div id="bowl-type" class="bowl-type">READY...</div>
+
+        <div id="shot-feedback" class="shot-feedback">EXCELLENT!</div>
+
+        <div class="controls-hint">
+            <div class="key-hint"><span class="key">D</span> DRIVE</div>
+            <div class="key-hint"><span class="key">S</span> LOFT</div>
+            <div class="key-hint"><span class="key">SPACE</span> DEFEND</div>
+            <div class="key-hint"><span class="key">L</span> LEAVE</div>
+            <div class="key-hint"><span class="key">MOUSE</span> AIM</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+
+    <script>
+        // --- CONSTANTS & SETTINGS ---
+        const PITCH_WIDTH = 3;
+        const PITCH_LENGTH = 20;
+        const BOUNDARY_RADIUS = 60;
+        const STRIKER_POS = new THREE.Vector3(0, 0, PITCH_LENGTH / 2 - 1);
+        const BOWL_POS = new THREE.Vector3(0, 5, -PITCH_LENGTH / 2);
+
+        // --- GAME STATE ---
+        let score = 0;
+        let ballsBowled = 0;
+        let isBallInPlay = false;
+        let currentBowlerType = 'FAST'; // FAST or SPIN
+        let batState = 'idle'; // idle, swinging, return
+        let mouseX = 0;
+        let lastTiming = 0;
+        let isGameOver = false;
+
+        // --- THREE.JS GLOBALS ---
+        let scene, camera, renderer, world;
+        let ballMesh, ballBody;
+        let batGroup, batBody;
+        let fielders = [];
+        let physicsMaterial;
+        let cameraState = 'fixed';
+        let bowlerObj, batsmanObj;
+        let pitchingMarker, directionGuide;
+
+        function init() {
+            // Scene & Camera
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050a10);
+            scene.fog = new THREE.Fog(0x050a10, 40, 150);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 3, PITCH_LENGTH / 2 + 8);
+            camera.lookAt(0, 1, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Physics World
+            world = new CANNON.World();
+            world.gravity.set(0, -9.82, 0);
+            physicsMaterial = new CANNON.Material("physics");
+            const contactMaterial = new CANNON.ContactMaterial(physicsMaterial, physicsMaterial, {
+                friction: 0.1,
+                restitution: 0.8
+            });
+            world.addContactMaterial(contactMaterial);
+
+            createEnvironment();
+            createPlayers();
+            setupControls();
+
+            animate();
+        }
+
+        function createEnvironment() {
+            // Ground (Circular Grass)
+            const groundGeo = new THREE.CircleGeometry(150, 64);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a2a1a, roughness: 0.8 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            const groundBody = new CANNON.Body({ mass: 0, material: physicsMaterial });
+            groundBody.addShape(new CANNON.Plane());
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+            world.addBody(groundBody);
+
+            // Pitch
+            const pitchGeo = new THREE.PlaneGeometry(PITCH_WIDTH, PITCH_LENGTH);
+            const pitchMat = new THREE.MeshStandardMaterial({
+                color: 0xccaa88,
+                map: createPitchTexture(),
+                roughness: 0.5
+            });
+            const pitch = new THREE.Mesh(pitchGeo, pitchMat);
+            pitch.rotation.x = -Math.PI / 2;
+            pitch.position.y = 0.01;
+            pitch.receiveShadow = true;
+            scene.add(pitch);
+
+            // Outfield Rings (Paint)
+            const ringGeo = new THREE.RingGeometry(BOUNDARY_RADIUS - 0.5, BOUNDARY_RADIUS + 0.5, 64);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+            const boundary = new THREE.Mesh(ringGeo, ringMat);
+            boundary.rotation.x = -Math.PI / 2;
+            boundary.position.y = 0.02;
+            scene.add(boundary);
+
+            // Lights
+            const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambient);
+
+            for (let i = 0; i < 4; i++) {
+                const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+                const light = new THREE.DirectionalLight(0xffffff, 0.6);
+                light.position.set(Math.cos(angle) * 80, 60, Math.sin(angle) * 80);
+                light.castShadow = true;
+                light.shadow.mapSize.width = 2048;
+                light.shadow.mapSize.height = 2048;
+                scene.add(light);
+            }
+
+            // Sky Stars
+            const starsVecs = [];
+            for (let i = 0; i < 3000; i++) starsVecs.push((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 200 + 100, (Math.random() - 0.5) * 400);
+            const starsGeo = new THREE.BufferGeometry();
+            starsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starsVecs, 3));
+            const stars = new THREE.Points(starsGeo, new THREE.PointsMaterial({ color: 0x5588ff, size: 0.5 }));
+            scene.add(stars);
+        }
+
+        function createPitchTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ccaa88'; ctx.fillRect(0, 0, 128, 512);
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(128, 50); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 462); ctx.lineTo(128, 462); ctx.stroke();
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createPlayers() {
+            // Wickets
+            const wicketMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+            for (let zSide of [1, -1]) {
+                const group = new THREE.Group();
+                for (let i = -1; i <= 1; i++) {
+                    const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7), wicketMat);
+                    stump.position.set(i * 0.12, 0.35, zSide * PITCH_LENGTH / 2);
+                    group.add(stump);
+                }
+                scene.add(group);
+            }
+
+            // Ball
+            const bGeo = new THREE.SphereGeometry(0.07, 16, 16);
+            const bMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.1, metalness: 0.1 });
+            ballMesh = new THREE.Mesh(bGeo, bMat);
+            ballMesh.castShadow = true;
+            scene.add(ballMesh);
+
+            ballBody = new CANNON.Body({ mass: 0.16, material: physicsMaterial });
+            ballBody.addShape(new CANNON.Sphere(0.07));
+            ballBody.position.set(0, -10, 0);
+            world.addBody(ballBody);
+
+            // Pitching Marker
+            const pMarkGeo = new THREE.RingGeometry(0.15, 0.25, 32);
+            const pMarkMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            pitchingMarker = new THREE.Mesh(pMarkGeo, pMarkMat);
+            pitchingMarker.rotation.x = -Math.PI / 2;
+            pitchingMarker.position.y = 0.05;
+            pitchingMarker.visible = false;
+            scene.add(pitchingMarker);
+
+            // Direction Guide
+            const dGuideGeo = new THREE.BoxGeometry(0.05, 0.01, 3);
+            const dGuideMat = new THREE.MeshBasicMaterial({ color: 0x00ffee, transparent: true, opacity: 0.4 });
+            directionGuide = new THREE.Mesh(dGuideGeo, dGuideMat);
+            directionGuide.position.set(STRIKER_POS.x, 0.05, STRIKER_POS.z);
+            scene.add(directionGuide);
+
+            // Wicketkeeper
+            createFielder(0, PITCH_LENGTH / 2 + 2, 'KEEPER');
+            const angles = [0.5, 1.2, 2.1, 3.5, 4.2, 5.0, 5.8, 6.1];
+            angles.forEach((a, i) => {
+                const dist = i < 3 ? 15 : 45; // Inner vs Outer
+                createFielder(Math.sin(a) * dist, Math.cos(a) * dist, 'FIELDER');
+            });
+
+            // Bowler with specific reference
+            bowlerObj = createFielder(0, -PITCH_LENGTH / 2 - 4.5, 'BOWLER');
+
+            // --- BATSMAN ---
+            batsmanObj = createFielder(STRIKER_POS.x, STRIKER_POS.z + 0.5, 'BATSMAN');
+            // Attach bat to batsman's arms
+            batGroup = new THREE.Group();
+            const batBlade = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.8, 0.08), new THREE.MeshStandardMaterial({ color: 0x664422 }));
+            batBlade.position.y = -0.4; // relative to handle pivot
+            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+            handle.position.y = 0;
+            batGroup.add(batBlade); batGroup.add(handle);
+
+            // Initial position: handle at waist height
+            batGroup.position.set(0.3, 0.8, 0);
+            batsmanObj.mesh.add(batGroup);
+            batsmanObj.bat = batGroup;
+        }
+
+        function createFielder(x, z, type) {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({ color: type === 'BATSMAN' ? 0xffffff : (type === 'BOWLER' ? 0xffff00 : 0x2244ff) });
+            const sMat = new THREE.MeshStandardMaterial({ color: 0xffccaa });
+
+            // Torso
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.1, 0.7, 8), mat);
+            body.position.y = 1.05;
+            group.add(body);
+
+            // Head (and helmet if batsman)
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.12), sMat);
+            head.position.y = 1.5;
+            group.add(head);
+            if (type === 'BATSMAN') {
+                const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x002244 }));
+                helmet.position.y = 1.5; group.add(helmet);
+            }
+
+            // Create limbs
+            const createLimb = (w, h, py, px) => {
+                const l = new THREE.Mesh(new THREE.CylinderGeometry(w, w, h, 6), mat);
+                l.position.set(px, py, 0);
+                return l;
+            };
+
+            const lLeg = createLimb(0.04, 0.7, 0.35, -0.07);
+            const rLeg = createLimb(0.04, 0.7, 0.35, 0.07);
+            const lArm = createLimb(0.04, 0.6, 1.1, -0.2);
+            const rArm = createLimb(0.04, 0.6, 1.1, 0.2);
+
+            group.add(lLeg, rLeg, lArm, rArm);
+            group.position.set(x, 0, z);
+            scene.add(group);
+
+            const obj = {
+                mesh: group, type,
+                startX: x, startZ: z,
+                lLeg, rLeg, lArm, rArm,
+                state: 'idle',
+                phase: Math.random() * Math.PI * 2
+            };
+            fielders.push(obj);
+            return obj;
+        }
+
+        function setupControls() {
+            window.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+            });
+            window.addEventListener('keydown', (e) => {
+                if (batState !== 'idle') return;
+                const key = e.key.toLowerCase();
+                if (key === 'd') performShot('DRIVE');
+                if (key === 's') performShot('LOFT');
+                if (key === ' ') performShot('DEFEND');
+                if (key === 'l') performShot('LEAVE');
+            });
+        }
+
+        let isBallHit = false;
+
+        function bowl() {
+            if (isBallInPlay) return;
+            isBallInPlay = true;
+            ballsBowled++;
+            currentBowlerType = (Math.floor((ballsBowled - 1) / 6) % 2 === 0) ? 'FAST' : 'SPIN';
+            document.getElementById('bowl-type').textContent = currentBowlerType + " BOWLING...";
+
+            cameraState = 'fixed'; // Reset camera
+            pitchingMarker.visible = false;
+
+            // Bowler Run-up Animation
+            const runStartTime = performance.now();
+            const runDuration = currentBowlerType === 'FAST' ? 1500 : 1000;
+            const startZ = bowlerObj.startZ;
+            const endZ = -PITCH_LENGTH / 2;
+
+            const runCycle = setInterval(() => {
+                const elapsed = performance.now() - runStartTime;
+                const t = Math.min(1, elapsed / runDuration);
+
+                bowlerObj.mesh.position.z = startZ + (endZ - startZ) * t;
+
+                // Run anim
+                bowlerObj.phase += 0.3;
+                bowlerObj.lLeg.rotation.x = Math.sin(bowlerObj.phase) * 0.5;
+                bowlerObj.rLeg.rotation.x = Math.sin(bowlerObj.phase + Math.PI) * 0.5;
+                bowlerObj.lArm.rotation.x = Math.sin(bowlerObj.phase + Math.PI) * 0.5;
+                bowlerObj.rArm.rotation.x = Math.sin(bowlerObj.phase) * 0.5;
+
+                if (t >= 1) {
+                    clearInterval(runCycle);
+                    releaseBall();
+                }
+            }, 16);
+        }
+
+        function releaseBall() {
+            ballBody.position.set(0, 2.8, -PITCH_LENGTH / 2);
+            ballBody.velocity.set(0, 0, 0);
+
+            const targetX = (Math.random() - 0.5) * 0.3;
+            const targetZ = STRIKER_POS.z;
+            const speed = currentBowlerType === 'FAST' ? 35 : 20;
+            const dirX = targetX - ballBody.position.x;
+            const dirZ = targetZ - ballBody.position.z;
+            const dist = Math.sqrt(dirX * dirX + dirZ * dirZ);
+            const vY = currentBowlerType === 'FAST' ? -1.8 : 3.0;
+
+            ballBody.velocity.set(dirX / dist * speed, vY, dirZ / dist * speed);
+            if (currentBowlerType === 'SPIN') ballBody.angularVelocity.set(0, (Math.random() - 0.5) * 20, 0);
+
+            // Predict Pitch Point
+            showPitchPrediction();
+
+            // Bowl action: arm swing
+            bowlerObj.rArm.rotation.x = -Math.PI;
+            setTimeout(() => { bowlerObj.rArm.rotation.x = 0; }, 500);
+        }
+
+        function showPitchPrediction() {
+            // Simplified trajectory prediction for pitching circle
+            // y(t) = y0 + v0y*t + 0.5*g*t^2 = 0.07 (ground height)
+            const y0 = ballBody.position.y;
+            const vy0 = ballBody.velocity.y;
+            const vz0 = ballBody.velocity.z;
+            const vx0 = ballBody.velocity.x;
+            const g = -9.82;
+
+            // Solve quadratic: 0.5*g*t^2 + vy0*t + (y0 - 0.05) = 0
+            // t = [-vy0 +- sqrt(vy0^2 - 4 * 0.5*g * (y0-0.05))] / (2 * 0.5*g)
+            const a = 0.5 * g;
+            const b = vy0;
+            const c = y0 - 0.05;
+            const det = b * b - 4 * a * c;
+
+            if (det >= 0) {
+                const t = (-b - Math.sqrt(det)) / (2 * a);
+                if (t > 0) {
+                    pitchingMarker.position.x = ballBody.position.x + vx0 * t;
+                    pitchingMarker.position.z = ballBody.position.z + vz0 * t;
+                    pitchingMarker.visible = true;
+                }
+            }
+        }
+
+        function performShot(type) {
+            if (type === 'LEAVE') { showFeedback("LEFT!"); return; }
+            batState = 'swinging';
+            const swingTarget = mouseX * (Math.PI / 1.5);
+            const startTime = performance.now();
+
+            const interval = setInterval(() => {
+                const elapsed = performance.now() - startTime;
+                const t = Math.min(1, elapsed / 250);
+
+                // Batsman body and arm rotation
+                batsmanObj.mesh.rotation.y = swingTarget * 0.5;
+                batsmanObj.lArm.rotation.x = -Math.PI / 1.5 * Math.sin(t * Math.PI);
+                batsmanObj.rArm.rotation.x = -Math.PI / 1.5 * Math.sin(t * Math.PI);
+
+                // Bat logic: handle the pivot correctly
+                if (batsmanObj.bat) {
+                    batsmanObj.bat.rotation.x = -Math.PI / 1.2 * Math.sin(t * Math.PI);
+                }
+
+                const dist = ballMesh.position.distanceTo(new THREE.Vector3(STRIKER_POS.x, 1.0, STRIKER_POS.z));
+                if (dist < 1.4 && batState === 'swinging') {
+                    hitBall(type, swingTarget);
+                    batState = 'hit';
+                    cameraState = 'follow';
+                }
+
+                if (t >= 1) {
+                    clearInterval(interval);
+                    batState = 'idle';
+                    batsmanObj.lArm.rotation.x = 0; batsmanObj.rArm.rotation.x = 0;
+                    if (batsmanObj.bat) batsmanObj.bat.rotation.x = 0;
+                }
+            }, 16);
+        }
+
+        function hitBall(type, direction) {
+            isBallHit = true;
+            const zDist = Math.abs(ballMesh.position.z - STRIKER_POS.z);
+            let power = Math.max(0.1, 1.2 - zDist);
+            let feedback = power > 0.9 ? "SUPERB!" : (power > 0.5 ? "GOOD" : "EDGE...");
+            if (type === 'DEFEND') { power *= 0.1; feedback = "DEFENDED"; }
+            if (type === 'LOFT') { power *= 1.6; feedback = "LOFTED!"; }
+            const baseSpeed = type === 'LOFT' ? 45 : (type === 'DRIVE' ? 35 : 8);
+            
+            // Re-calculate direction to ensure it follows the mouse-selected angle
+            const hitAngle = mouseX * (Math.PI / 2); // 180 degree arc (-90 to +90)
+            const kX = -Math.sin(hitAngle), kZ = -Math.abs(Math.cos(hitAngle));
+            
+            const kY = type === 'LOFT' ? 0.75 : 0.05;
+            ballBody.velocity.set(kX * baseSpeed * power, kY * baseSpeed * power, kZ * baseSpeed * power);
+            showFeedback(feedback);
+        }
+
+        function showFeedback(txt) {
+            const el = document.getElementById('shot-feedback');
+            el.textContent = txt; el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 1500);
+        }
+
+        function updateFielding() {
+            const ballX = ballBody.position.x, ballZ = ballBody.position.z;
+            const ballSpeed = ballBody.velocity.length();
+
+            fielders.forEach(f => {
+                if (f.type === 'KEEPER' || f.type === 'BOWLER' || f.type === 'BATSMAN') return;
+                const distToBall = f.mesh.position.distanceTo(ballMesh.position);
+
+                const shouldChase = isBallHit && distToBall < 60 && ballSpeed > 0.5;
+
+                if (shouldChase) {
+                    const dir = ballMesh.position.clone().sub(f.mesh.position).normalize();
+                    f.mesh.position.x += dir.x * 0.18;
+                    f.mesh.position.z += dir.z * 0.18;
+                    f.mesh.lookAt(ballMesh.position.x, 0, ballMesh.position.z);
+
+                    f.phase += 0.3;
+                    f.lLeg.rotation.x = Math.sin(f.phase) * 0.6;
+                    f.rLeg.rotation.x = Math.sin(f.phase + Math.PI) * 0.6;
+                    f.lArm.rotation.x = Math.sin(f.phase + Math.PI) * 0.4;
+                    f.rArm.rotation.x = Math.sin(f.phase) * 0.4;
+
+                    if (distToBall < 2.0) { f.lArm.rotation.x = -1.2; f.rArm.rotation.x = -1.2; }
+
+                    if (distToBall < 1.1) {
+                        ballBody.velocity.set(0, 0, 0); showFeedback("STOPPED!");
+                        isBallHit = false;
+                        setTimeout(resetBall, 1500);
+                    }
+                } else if (!isBallInPlay) {
+                    const distToHome = Math.sqrt((f.mesh.position.x - f.startX) ** 2 + (f.mesh.position.z - f.startZ) ** 2);
+                    if (distToHome > 0.5) {
+                        const dir = new THREE.Vector3(f.startX, 0, f.startZ).sub(f.mesh.position).normalize();
+                        f.mesh.position.x += dir.x * 0.12; f.mesh.position.z += dir.z * 0.12;
+                        f.mesh.lookAt(f.startX, 0, f.startZ);
+                        f.phase += 0.2;
+                        f.lLeg.rotation.x = Math.sin(f.phase) * 0.4; f.rLeg.rotation.x = Math.sin(f.phase + Math.PI) * 0.4;
+                    } else {
+                        f.lLeg.rotation.x = 0; f.rLeg.rotation.x = 0;
+                        f.lArm.rotation.x = 0; f.rArm.rotation.x = 0;
+                        f.mesh.lookAt(0, 0, 0);
+                    }
+                }
+            });
+
+            const dist = Math.sqrt(ballX * ballX + ballZ * ballZ);
+            if (dist > BOUNDARY_RADIUS && isBallInPlay) {
+                const runs = ballBody.position.y > 1.8 ? 6 : 4;
+                score += runs; showFeedback(runs + " RUNS!");
+                isBallHit = false;
+                resetBall();
+            }
+            if (ballZ > PITCH_LENGTH / 2 + 3 && isBallInPlay) {
+                isBallHit = false;
+                resetBall();
+            }
+        }
+
+        function resetBall() {
+            isBallInPlay = false; ballBody.position.set(0, -10, 0); ballBody.velocity.set(0, 0, 0); updateHUD();
+            isBallHit = false;
+            cameraState = 'fixed';
+            setTimeout(bowl, 2500);
+        }
+
+        function updateHUD() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('overs').textContent = Math.floor(ballsBowled / 6) + "." + (ballsBowled % 6);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            world.step(1 / 60);
+            ballMesh.position.copy(ballBody.position);
+            ballMesh.quaternion.copy(ballBody.quaternion);
+
+            updateFielding();
+
+            // Camera System
+            if (cameraState === 'follow' && isBallInPlay) {
+                const targetPos = new THREE.Vector3(ballMesh.position.x, ballMesh.position.y + 4, ballMesh.position.z + 10);
+                camera.position.lerp(targetPos, 0.05);
+                camera.lookAt(ballMesh.position);
+            } else {
+                const defaultPos = new THREE.Vector3(0, 3, PITCH_LENGTH / 2 + 8);
+                camera.position.lerp(defaultPos, 0.05);
+                camera.lookAt(0, 1, 0);
+            }
+
+            // Update Direction Guide
+            if (directionGuide && batsmanObj) {
+                const hitAngle = mouseX * (Math.PI / 2);
+                directionGuide.rotation.y = hitAngle;
+                // Position guide in front of batsman
+                const offset = 1.5;
+                directionGuide.position.set(
+                    STRIKER_POS.x - Math.sin(hitAngle) * offset,
+                    0.05,
+                    STRIKER_POS.z - Math.cos(hitAngle) * offset
+                );
+                directionGuide.visible = !isBallHit && isBallInPlay;
+            }
+
+            // Hide pitching marker after it is bounced
+            if (ballBody.position.z > pitchingMarker.position.z + 0.5) {
+                pitchingMarker.visible = false;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function startGame() {
+            document.getElementById('start-overlay').style.display = 'none';
+            init();
+            setTimeout(bowl, 2000);
+        }
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>
