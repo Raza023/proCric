@@ -205,6 +205,7 @@
         let isGameOver = false;
         let wickets = 0;
         let batsmanHand = 'RIGHT'; // 'RIGHT' or 'LEFT'
+        let hasTouchedGroundAfterHit = false;
 
         // --- THREE.JS GLOBALS ---
         let scene, camera, renderer, world;
@@ -388,6 +389,16 @@
             ballBody = new CANNON.Body({ mass: 0.16, material: physicsMaterial });
             ballBody.addShape(new CANNON.Sphere(0.07));
             ballBody.position.set(0, -10, 0);
+            // Ball collision for ground touch
+            ballBody.addEventListener('collide', (e) => {
+                if (isBallInPlay && isBallHit) {
+                    // Check if it hit the ground (PITCH) or something else
+                    // Simple: if it hit anything other than the bat (which we don't have physics for yet)
+                    // it counts as touching the ground for catch/boundary purposes
+                    hasTouchedGroundAfterHit = true;
+                }
+            });
+
             world.addBody(ballBody);
 
             // Pitching Marker
@@ -557,15 +568,26 @@
             ballBody.position.set(0, 2.8, -PITCH_LENGTH / 2);
             ballBody.velocity.set(0, 0, 0);
 
-            const targetX = (Math.random() - 0.5) * 0.4; // Slight variation around middle stump
-            const targetZ = STRIKER_POS.z - 4; // Pitch ahead of batsman (around 4m ahead)
-            const speed = currentBowlerType === 'FAST' ? 38 : 22;
-            const dirX = targetX - ballBody.position.x;
-            const dirZ = targetZ - ballBody.position.z;
-            const dist = Math.sqrt(dirX * dirX + dirZ * dirZ);
-            const vY = currentBowlerType === 'FAST' ? -1.0 : 1.5;
+            const pitchAhead = Math.random() * 8 + 2; // Randomly pitch 2m to 10m ahead
+            const targetZ = STRIKER_POS.z - pitchAhead; 
+            const driftX = (Math.random() - 0.5) * 0.3; // Aim toward stumps
+            
+            const speed = currentBowlerType === 'FAST' ? 38 + Math.random() * 3 : 22 + Math.random() * 2;
+            
+            // Calculate vZ based on speed (v_z is the main speed component)
+            const vZ = speed;
+            const timeToPitch = (targetZ - ballBody.position.z) / vZ;
+            
+            // Solve for vY so it hits ground at targetZ
+            // y(t) = y0 + vY*t + 0.5*g*t^2 = 0.07
+            const g = -9.82;
+            const vY = (0.07 - ballBody.position.y - 0.5 * g * timeToPitch * timeToPitch) / timeToPitch;
+            
+            // horizontal vx depends on driftX at stumps (z=10)
+            const timeToStumps = (10 - ballBody.position.z) / vZ;
+            const vX = (driftX - ballBody.position.x) / timeToStumps;
 
-            ballBody.velocity.set(dirX / dist * speed, vY, dirZ / dist * speed);
+            ballBody.velocity.set(vX, vY, vZ);
             if (currentBowlerType === 'SPIN') ballBody.angularVelocity.set(0, (Math.random() - 0.5) * 20, 0);
 
             // Predict Pitch Point
@@ -646,6 +668,7 @@
 
         function hitBall(type, direction) {
             isBallHit = true;
+            hasTouchedGroundAfterHit = false;
             const zDist = Math.abs(ballMesh.position.z - STRIKER_POS.z);
             let power = Math.max(0.1, 1.2 - zDist);
             let feedback = power > 0.9 ? "SUPERB!" : (power > 0.5 ? "GOOD" : "EDGE...");
@@ -691,6 +714,13 @@
                 const shouldChase = isBallHit && distToBall < 60 && ballSpeed > 0.5;
 
                 if (shouldChase) {
+                    // CATCHING Logic: If ball is in air and close to fielder
+                    if (!hasTouchedGroundAfterHit && ballMesh.position.y > 0.5 && ballMesh.position.y < 2.5 && distToBall < 1.5) {
+                        handleOut("CAUGHT!");
+                        isBallHit = false;
+                        return;
+                    }
+
                     const dir = ballMesh.position.clone().sub(f.mesh.position).normalize();
                     f.mesh.position.x += dir.x * 0.18;
                     f.mesh.position.z += dir.z * 0.18;
@@ -727,7 +757,7 @@
 
             const dist = Math.sqrt(ballX * ballX + ballZ * ballZ);
             if (dist > BOUNDARY_RADIUS && isBallInPlay) {
-                const runs = ballBody.position.y > 1.8 ? 6 : 4;
+                const runs = (!hasTouchedGroundAfterHit) ? 6 : 4;
                 score += runs; showFeedback(runs + " RUNS!");
                 isBallHit = false;
                 resetBall();
