@@ -152,6 +152,43 @@
             transform: scale(1.1);
             box-shadow: 0 0 40px rgba(0, 255, 238, 0.7);
         }
+
+        #game-over-overlay {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, #1a2a40 0%, #050a10 100%);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .game-over-title {
+            font-size: 70px;
+            font-weight: 900;
+            color: #fff;
+            margin-bottom: 30px;
+            text-shadow: 0 0 30px #00ffee;
+        }
+
+        .restart-btn {
+            padding: 15px 50px;
+            font-size: 20px;
+            background: #00ffee;
+            color: #000;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 700;
+            transition: all 0.3s;
+            box-shadow: 0 0 20px rgba(0, 255, 238, 0.4);
+        }
+
+        .restart-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 40px rgba(0, 255, 238, 0.7);
+        }
     </style>
 </head>
 
@@ -159,6 +196,11 @@
     <div id="start-overlay">
         <h1 class="start-title">CRICKET PRO 3D</h1>
         <button class="start-btn" onclick="startGame()">ENTER THE STADIUM</button>
+    </div>
+
+    <div id="game-over-overlay">
+        <h1 class="game-over-title">GAME OVER</h1>
+        <button class="restart-btn" onclick="restartGame()">RESTART MATCH</button>
     </div>
 
     <div id="game-ui">
@@ -567,8 +609,8 @@
             // Randomly decide the delivery type
             const rng = Math.random();
             let deliveryType;
-            if (rng < 0.50) deliveryType = 'STUMP_HIT'; // 50% chance to hit stumps
-            else if (rng < 0.95) deliveryType = 'KEEPER_MISS'; // 45% chance to be collected by keeper
+            if (rng < 0.70) deliveryType = 'STUMP_HIT'; // 70% chance to hit stumps
+            else if (rng < 0.95) deliveryType = 'KEEPER_MISS'; // 25% chance to be collected by keeper
             else deliveryType = 'WIDE_BOUNCER'; // 5% chance to be wide
 
             const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 4 + 4;
@@ -700,8 +742,13 @@
             isBallInPlay = false;
             isBallHit = false;
 
-            // Wait, then reset the ball
-            setTimeout(resetBall, 2000);
+            // Check if game over (e.g., 3 wickets)
+            if (wickets >= 3) {
+                endGame();
+            } else {
+                // Wait, then reset the ball
+                setTimeout(resetBall, 2000);
+            }
         }
 
         function showFeedback(txt) {
@@ -880,6 +927,22 @@
             init();
             setTimeout(bowl, 2000);
         }
+
+        function endGame() {
+            isGameOver = true;
+            document.getElementById('game-over-overlay').style.display = 'flex';
+        }
+
+        function restartGame() {
+            document.getElementById('game-over-overlay').style.display = 'none';
+            score = 0;
+            ballsBowled = 0;
+            wickets = 0;
+            isGameOver = false;
+            updateHUD();
+            resetBall();
+        }
+
         function toggleHandedness() {
             batsmanHand = (batsmanHand === 'RIGHT') ? 'LEFT' : 'RIGHT';
             createPlayers();
