@@ -191,20 +191,20 @@
         const PITCH_WIDTH = 3;
         const PITCH_LENGTH = 20;
         const BOUNDARY_RADIUS = 60;
-        const STRIKER_POS = new THREE.Vector3(0.5, 0, PITCH_LENGTH / 2 - 2); // Stand beside and ahead
+        const STRIKER_POS = new THREE.Vector3(0.5, 0, PITCH_LENGTH / 2 - 2);
         const BOWL_POS = new THREE.Vector3(0, 5, -PITCH_LENGTH / 2);
 
         // --- GAME STATE ---
         let score = 0;
         let ballsBowled = 0;
         let isBallInPlay = false;
-        let currentBowlerType = 'FAST'; // FAST or SPIN
-        let batState = 'idle'; // idle, swinging, return
+        let currentBowlerType = 'FAST';
+        let batState = 'idle';
         let mouseX = 0;
         let lastTiming = 0;
         let isGameOver = false;
         let wickets = 0;
-        let batsmanHand = 'RIGHT'; // 'RIGHT' or 'LEFT'
+        let batsmanHand = 'RIGHT';
         let hasTouchedGroundAfterHit = false;
 
         // --- THREE.JS GLOBALS ---
@@ -337,7 +337,7 @@
             const toRemove = [];
             scene.children.forEach(c => { if (c.isWicketGroup) toRemove.push(c); });
             toRemove.forEach(c => scene.remove(c));
-            
+
             // Wickets
             const wicketMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
             for (let zSide of [1, -1]) {
@@ -345,7 +345,7 @@
                 group.isWicketGroup = true;
                 for (let i = -1; i <= 1; i++) {
                     const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.85), wicketMat);
-                    const sx = i * 0.10; // Closer together to prevent ball passing through
+                    const sx = i * 0.10;
                     const sz = zSide * PITCH_LENGTH / 2;
                     stump.position.set(sx, 0.425, sz);
                     group.add(stump);
@@ -353,7 +353,7 @@
                     // Add physics to striker-end stumps
                     if (zSide === 1) {
                         const sBody = new CANNON.Body({
-                            mass: 1.0, // A bit heavier for stability
+                            mass: 1.0,
                             material: physicsMaterial,
                             position: new CANNON.Vec3(sx, 0.425, sz)
                         });
@@ -364,14 +364,14 @@
                         sBody.initPosition = new CANNON.Vec3(sx, 0.425, sz);
                         sBody.quaternion.set(0, 0, 0, 1);
                         world.addBody(sBody);
-                        
+
                         // Collision detection
                         sBody.addEventListener("collide", (e) => {
                             if (e.body === ballBody && isBallInPlay && !isBallHit) {
                                 handleOut("BOWLED!");
                             }
                         });
-                        
+
                         // Link mesh to body (only for striker end to animate movement)
                         stump.physicsBody = sBody;
                     }
@@ -392,9 +392,6 @@
             // Ball collision for ground touch
             ballBody.addEventListener('collide', (e) => {
                 if (isBallInPlay && isBallHit) {
-                    // Check if it hit the ground (PITCH) or something else
-                    // Simple: if it hit anything other than the bat (which we don't have physics for yet)
-                    // it counts as touching the ground for catch/boundary purposes
                     hasTouchedGroundAfterHit = true;
                 }
             });
@@ -419,7 +416,7 @@
 
             // Wicketkeeper (Further back to see stumps)
             createFielder(0, PITCH_LENGTH / 2 + 4, 'KEEPER');
-            
+
             // 5 Inner Circle Fielders
             const innerAngles = [0.8, 1.8, 3.14, 4.4, 5.4];
             innerAngles.forEach(a => createFielder(Math.sin(a) * 12, Math.cos(a) * 12, 'FIELDER'));
@@ -432,38 +429,34 @@
             bowlerObj = createFielder(0, -PITCH_LENGTH / 2 - 4.5, 'BOWLER');
 
             // --- BATSMAN ---
-            const side = batsmanHand === 'RIGHT' ? 1 : -1; 
-            // --- BATSMAN ---
-            STRIKER_POS.x = -0.5 * side; // RHS at -0.5, LHS at 0.5
-            
+            const side = batsmanHand === 'RIGHT' ? 1 : -1;
+            STRIKER_POS.x = -0.5 * side;
+
             batsmanObj = createFielder(STRIKER_POS.x, STRIKER_POS.z + 0.5, 'BATSMAN');
-            
+
             // Tilt batsman toward the stumps
-            batsmanObj.mesh.rotation.z = 0.2 * side; // Tilt toward stumps (RHS at -0.5 tilts +X)
-            batsmanObj.mesh.rotation.y = Math.PI / 2 * side; // RHS faces +X, LHS faces -X
-            
+            batsmanObj.mesh.rotation.z = 0.2 * side;
+            batsmanObj.mesh.rotation.y = Math.PI / 2 * side;
+
             // Attach bat
             batGroup = new THREE.Group();
             const batBlade = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.8, 0.08), new THREE.MeshStandardMaterial({ color: 0x664422 }));
-            batBlade.position.y = -0.6; // Blade below handle
+            batBlade.position.y = -0.6;
             const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-            handle.position.y = 0; // Grip point at (0,0,0)
+            handle.position.y = 0;
             batGroup.add(batBlade, handle);
 
             // Position bat "in both hands" and "facing stumps"
-            // To point toward bowler: RHS faces +X, so local +X is bowler. LHS faces -X, local -X is bowler.
-            // To point toward stumps: RHS at -0.5 reaches +X (local +Z). LHS at 0.5 reaches -X (local +Z).
-            batGroup.position.set(0.15 * side, 0.6, 0.35 ); 
+            batGroup.position.set(0.15 * side, 0.6, 0.35);
             batGroup.rotation.set(0.3, -0.4 * side, 0.8 * side);
-            
+
             batsmanObj.mesh.add(batGroup);
             batsmanObj.bat = batGroup;
-            
+
             // Adjust arms to "grab" the bat handle with BOTH hands
-            // Bring hands to meet the bat handle
-            batsmanObj.lArm.position.set(-0.15, 1.1, 0.05); 
+            batsmanObj.lArm.position.set(-0.15, 1.1, 0.05);
             batsmanObj.rArm.position.set(0.15, 1.1, 0.05);
-            
+
             // Aim arms at the bat handle position
             batsmanObj.lArm.rotation.set(-0.8, -0.2, 0.4 * side);
             batsmanObj.rArm.rotation.set(-0.8, 0.2, -0.4 * side);
@@ -538,7 +531,7 @@
             currentBowlerType = (Math.floor((ballsBowled - 1) / 6) % 2 === 0) ? 'FAST' : 'SPIN';
             document.getElementById('bowl-type').textContent = currentBowlerType + " BOWLING...";
 
-            cameraState = 'fixed'; // Reset camera
+            cameraState = 'fixed';
             pitchingMarker.visible = false;
 
             // Bowler Run-up Animation
@@ -571,32 +564,33 @@
             ballBody.position.set(0, 2.8, -PITCH_LENGTH / 2);
             ballBody.velocity.set(0, 0, 0);
 
+            // Randomly decide the delivery type
             const rng = Math.random();
-            let deliveryType = 'KEEPER_MISS';
-            if (rng < 0.50) deliveryType = 'STUMP_HIT';
-            else if (rng < 0.95) deliveryType = 'KEEPER_MISS';
-            else deliveryType = 'WIDE_BOUNCER';
+            let deliveryType;
+            if (rng < 0.50) deliveryType = 'STUMP_HIT'; // 50% chance to hit stumps
+            else if (rng < 0.95) deliveryType = 'KEEPER_MISS'; // 45% chance to be collected by keeper
+            else deliveryType = 'WIDE_BOUNCER'; // 5% chance to be wide
 
-            const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 4 + 4; 
-            const targetZ = STRIKER_POS.z - pitchAhead; 
-            
-            // Tighter aim for STUMP_HIT (nearly always hits middle/off/leg stumps)
-            const driftX = (deliveryType === 'STUMP_HIT') ? (Math.random() - 0.5) * 0.08 : (Math.random() - 0.5) * 0.7;
-            
+            const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 4 + 4;
+            const targetZ = STRIKER_POS.z - pitchAhead;
+
+            // Tighter aim for STUMP_HIT (mostly within stumps)
+            const driftX = (deliveryType === 'STUMP_HIT') ? (Math.random() - 0.5) * 0.3 : (Math.random() - 0.5) * 0.7;
+
             const speed = currentBowlerType === 'FAST' ? 38 + Math.random() * 5 : 22 + Math.random() * 3;
             const vZ = speed;
             const timeToPitch = (targetZ - ballBody.position.z) / vZ;
-            
+
             const g = -9.82;
             let targetHeightAtPitch = 0.07;
-            
+
             // Tune bounce for the user's new 0.4 restitution
-            if (deliveryType === 'KEEPER_MISS') targetHeightAtPitch = 0.08; 
-            if (deliveryType === 'STUMP_HIT') targetHeightAtPitch = 0.04; 
-            if (deliveryType === 'WIDE_BOUNCER') targetHeightAtPitch = 0.45; // Need more bounce for wide with low restitution
+            if (deliveryType === 'KEEPER_MISS') targetHeightAtPitch = 0.08;
+            if (deliveryType === 'STUMP_HIT') targetHeightAtPitch = 0.04;
+            if (deliveryType === 'WIDE_BOUNCER') targetHeightAtPitch = 0.45;
 
             const vY = (targetHeightAtPitch - ballBody.position.y - 0.5 * g * timeToPitch * timeToPitch) / timeToPitch;
-            
+
             const timeToStumps = (10 - ballBody.position.z) / vZ;
             const vX = (driftX - ballBody.position.x) / timeToStumps;
 
@@ -650,7 +644,7 @@
                 // Batsman body and arm rotation
                 const side = batsmanHand === 'RIGHT' ? 1 : -1;
                 batsmanObj.mesh.rotation.y = (Math.PI / 2 * side) + swingTarget * 0.5;
-                
+
                 // Swing animation: relative to initial stance
                 const swingPhase = Math.sin(t * Math.PI);
                 batsmanObj.lArm.rotation.x = -0.8 - (Math.PI / 1.5 * swingPhase);
@@ -688,11 +682,11 @@
             if (type === 'DEFEND') { power *= 0.1; feedback = "DEFENDED"; }
             if (type === 'LOFT') { power *= 1.6; feedback = "LOFTED!"; }
             const baseSpeed = type === 'LOFT' ? 45 : (type === 'DRIVE' ? 35 : 8);
-            
+
             // Re-calculate direction to ensure it follows the mouse-selected angle
-            const hitAngle = mouseX * (Math.PI / 2); // 180 degree arc (-90 to +90)
+            const hitAngle = mouseX * (Math.PI / 2);
             const kX = -Math.sin(hitAngle), kZ = -Math.abs(Math.cos(hitAngle));
-            
+
             const kY = type === 'LOFT' ? 0.75 : 0.05;
             ballBody.velocity.set(kX * baseSpeed * power, kY * baseSpeed * power, kZ * baseSpeed * power);
             showFeedback(feedback);
@@ -705,7 +699,7 @@
             updateHUD();
             isBallInPlay = false;
             isBallHit = false;
-            
+
             // Wait, then reset the ball
             setTimeout(resetBall, 2000);
         }
@@ -800,7 +794,7 @@
             if (!isBallInPlay) return;
             showFeedback("WIDE!");
             score++;
-            ballsBowled--; // Wide doesn't count as a legal ball
+            ballsBowled--;
             updateHUD();
             isBallInPlay = false;
             setTimeout(resetBall, 1500);
@@ -810,7 +804,7 @@
             isBallInPlay = false; ballBody.position.set(0, -10, 0); ballBody.velocity.set(0, 0, 0); updateHUD();
             isBallHit = false;
             cameraState = 'fixed';
-            
+
             // Reset Wickets
             scene.traverse(child => {
                 if (child.physicsBody) {
@@ -828,9 +822,7 @@
         function updateHUD() {
             document.getElementById('score').textContent = score;
             document.getElementById('overs').textContent = Math.floor(ballsBowled / 6) + "." + (ballsBowled % 6);
-            
-            // Add wickets display next to score if you want, but for now just update log or score
-            // Let's assume the score is Score/Wickets
+
             document.getElementById('score').textContent = score + " / " + wickets;
         }
 
