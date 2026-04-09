@@ -5,7 +5,19 @@
 </p>
 
 ## 🌟 Overview
-**Cricket Pro 3D** is an immersive, physics-based cricket simulation built for the web. Experience high-octane batting action in a stunning 3D stadium environment, featuring advanced lighting, realistic ball physics, and a responsive fielding AI.
+
+
+| 🏆 Logo | 🕹️ Mechanics |
+| :--- | :--- |
+| <p align="center"> <img src="./logo.png" alt="Cricket Pro 3D Logo" width="200px"> </p> | **Cricket Pro 3D** is an immersive, physics-based cricket simulation built for the web. Experience high-octane batting action in a stunning 3D stadium environment, featuring advanced lighting, realistic ball physics, and a responsive fielding AI. |
+
+---
+
+<p align="center">
+  <a href="https://raza023.github.io/proCric/">
+    <img src="https://img.shields.io/badge/Play-Cricket%20Pro%203D-blue?style=for-the-badge">
+  </a>
+</p>
 
 ---
 
@@ -52,13 +64,6 @@
 | **Space** | Defensive Push |
 | **L** | Leave Ball |
 | **Mouse** | Aim Direction |
-
----
-
-## 📸 Preview
-<p align="center">
-  <img src="./logo.png" alt="Cricket Pro 3D Logo" width="200px">
-</p>
 
 ---
 Created with passion by [Raza023](https://github.com/Raza023)
