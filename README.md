@@ -1,11 +1,4 @@
-# Cricket Pro 3D 🏏
-
-<p align="center">
-  <img src="./banner.png" alt="Cricket Pro 3D Banner" width="100%">
-</p>
-
 ## 🌟 Overview
-
 
 | 🏆 Logo | 🕹️ Mechanics |
 | :--- | :--- |
@@ -17,6 +10,14 @@
   <a href="https://raza023.github.io/proCric/">
     <img src="https://img.shields.io/badge/Play-Cricket%20Pro%203D-blue?style=for-the-badge">
   </a>
+</p>
+
+---
+
+# Cricket Pro 3D 🏏
+
+<p align="center">
+  <img src="./banner.png" alt="Cricket Pro 3D Banner" width="100%">
 </p>
 
 ---
