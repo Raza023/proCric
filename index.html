@@ -936,11 +936,30 @@
             const ballX = ballBody.position.x, ballZ = ballBody.position.z;
             const ballSpeed = ballBody.velocity.length();
 
+            // Find the closest fielder to the ball
+            let closestFielder = null;
+            let minDist = Infinity;
+
+            fielders.forEach(f => {
+                if (f.type === 'KEEPER' || f.type === 'BOWLER' || f.type === 'BATSMAN') return;
+                const distToBall = f.mesh.position.distanceTo(ballMesh.position);
+                if (distToBall < minDist) {
+                    minDist = distToBall;
+                    closestFielder = f;
+                }
+            });
+
             fielders.forEach(f => {
                 if (f.type === 'KEEPER' || f.type === 'BOWLER' || f.type === 'BATSMAN') return;
                 const distToBall = f.mesh.position.distanceTo(ballMesh.position);
 
-                const shouldChase = isBallHit && distToBall < 60 && ballSpeed > 0.5;
+                // Fielders chase if it's hit, even if slow (defense)
+                // Closest fielder is always more aggressive
+                const isClosest = f === closestFielder;
+                const chaseThreshold = isClosest ? 80 : 40; 
+                const speedThreshold = isClosest ? 0.05 : 0.5;
+
+                const shouldChase = isBallHit && distToBall < chaseThreshold && ballSpeed > speedThreshold;
 
                 if (shouldChase) {
                     // CATCHING Logic: If ball is in air and close to fielder
