@@ -628,7 +628,7 @@
 
             // User Pitching Cursor (only visible when bowling)
             const cursorGeo = new THREE.RingGeometry(0.2, 0.25, 32);
-            const cursorMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.6 });
+            const cursorMat = new THREE.MeshBasicMaterial({ color: 0x0044ff, transparent: true, opacity: 0.8 });
             userPitchingCursor = new THREE.Mesh(cursorGeo, cursorMat);
             userPitchingCursor.rotation.x = -Math.PI / 2;
             userPitchingCursor.position.y = 0.06;
