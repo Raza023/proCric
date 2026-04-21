@@ -378,6 +378,8 @@
         }
 
         function init() {
+            if (renderer) return; // Already initialized
+            
             // Scene & Camera
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x050a10);
@@ -523,16 +525,19 @@
                         sBody.addShape(new CANNON.Cylinder(0.04, 0.04, 0.85, 8), new CANNON.Vec3(0,0,0), q);
                         sBody.initPosition = new CANNON.Vec3(sx, 0.425, sz);
                         sBody.quaternion.set(0, 0, 0, 1);
+                        sBody.collisionResponse = true;
                         world.addBody(sBody);
 
                         // Collision detection
                         sBody.addEventListener("collide", (e) => {
                             if (e.body === ballBody && isBallInPlay && !isBallHit) {
+                                // Become dynamic only when hit
+                                sBody.mass = 1.0;
+                                sBody.updateMassProperties();
                                 handleOut("BOWLED!");
                             }
                         });
 
-                        // Link mesh to body (only for striker end to animate movement)
                         stump.physicsBody = sBody;
                     }
                 }
@@ -747,29 +752,36 @@
             const g = -9.82;
 
             if (userRole === 'BATTING') {
-                // COMPUTER BOWLING (ORIGINAL LOGIC)
+                // COMPUTER BOWLING (ENHANCED VARIATIONS)
                 const rng = Math.random();
                 let deliveryType;
-                if (rng < 0.70) deliveryType = 'STUMP_HIT'; 
+                if (rng < 0.75) deliveryType = 'STUMP_HIT'; 
                 else if (rng < 0.95) deliveryType = 'KEEPER_MISS'; 
                 else deliveryType = 'WIDE_BOUNCER'; 
 
-                const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 8 : Math.random() * 4 + 4;
+                // Variance in pitching length: 2m (full) to 13m (short) ahead of stumps
+                const pitchAhead = (deliveryType === 'WIDE_BOUNCER') ? Math.random() * 3 + 12 : Math.random() * 11 + 2;
                 targetZ = STRIKER_POS.z - pitchAhead;
-                driftX = (deliveryType === 'STUMP_HIT') ? (Math.random() - 0.5) * 0.3 : (Math.random() - 0.5) * 0.7;
+                
+                // Variance in line: Off-stump (+1.2), leg-stump (-1.2), or central
+                driftX = (Math.random() - 0.5) * 2.5; 
 
-                const speed = currentBowlerType === 'FAST' ? 38 + Math.random() * 5 : 22 + Math.random() * 3;
+                const fastSpeed = 35 + Math.random() * 18;
+                const spinSpeed = 18 + Math.random() * 12;
+                const speed = currentBowlerType === 'FAST' ? fastSpeed : spinSpeed;
                 vZ = speed;
                 const timeToPitch = (targetZ - ballBody.position.z) / vZ;
 
-                let targetHeightAtPitch = 0.07;
-                if (deliveryType === 'KEEPER_MISS') targetHeightAtPitch = 0.08;
-                if (deliveryType === 'STUMP_HIT') targetHeightAtPitch = 0.04;
-                if (deliveryType === 'WIDE_BOUNCER') targetHeightAtPitch = 0.45;
+                let targetHeightAtPitch = 0.04 + Math.random() * 0.12;
+                if (deliveryType === 'WIDE_BOUNCER') targetHeightAtPitch = 0.6 + Math.random() * 1.0;
 
                 vY = (targetHeightAtPitch - ballBody.position.y - 0.5 * g * timeToPitch * timeToPitch) / timeToPitch;
-                const timeToStumps = (10 - ballBody.position.z) / vZ;
+                const timeToStumps = (STRIKER_POS.z - ballBody.position.z) / vZ;
                 vX = (driftX - ballBody.position.x) / timeToStumps;
+                
+                if (currentBowlerType === 'SPIN') {
+                    ballBody.angularVelocity.set(0, (Math.random() - 0.5) * 30, 0);
+                }
             } else {
                 // USER BOWLING
                 vZ = currentBowlerType === 'FAST' ? 40 : 25;
@@ -805,50 +817,28 @@
                 const distZ = ballBody.position.z - STRIKER_POS.z;
                 const distX = Math.abs(ballBody.position.x - STRIKER_POS.x);
 
-                // Swing when ball is close, but only if it's reachable
-                if (distZ > -2.2 && distZ < 0 && batState === 'idle') {
-                    if (distX < 1.2) { 
-                        // AI Decision Logic
-                        const rng = Math.random();
-                        if (rng > 0.05) { // 95% chance to swing
-                            let aiShotType = 'DRIVE';
-                            // Aggressive logic: Only defend if it's extremely low or extremely accurate
-                            if (ballBody.position.y > 1.3) aiShotType = 'LOFT';
-                            else if (ballBody.position.y < 0.25) aiShotType = 'DEFEND';
+                // Even more aggressive: detection starts earlier
+                if (distZ > -3.5 && distZ < 0 && batState === 'idle') {
+                    if (distX < 1.8) { 
+                        // High chance to hit
+                        const swingChance = 0.98;
+                        if (Math.random() < swingChance) {
+                            let aiShotType = Math.random() < 0.6 ? 'LOFT' : 'DRIVE'; // Mostly Loft
+                            if (ballBody.position.y < 0.2) aiShotType = 'DRIVE';
                             
-                            // 20% of low balls could still be drives (attacking the yorker)
-                            if (aiShotType === 'DEFEND' && Math.random() > 0.8) aiShotType = 'DRIVE';
+                            const aiDirection = (ballBody.position.x - STRIKER_POS.x) * 1.5; 
+                            const delay = Math.max(0, (Math.abs(distZ) / ballBody.velocity.z) * 500);
                             
-                            // Randomize AI quality
-                            const qualityRng = Math.random();
-                            let aiDirection = (ballBody.position.x - STRIKER_POS.x) * 0.8;
-                            
-                            if (qualityRng < 0.2) { // 20% chance of thick edge/mis-hit
-                                aiDirection += (Math.random() - 0.5) * 2.0; 
-                                showFeedback("MISTIMED!");
-                            } else if (qualityRng < 0.35) { // 15% chance of missing completely
-                                // Do nothing, let it go through
-                                showFeedback("BEATEN!");
-                            } else {
-                                performShot(aiShotType, aiDirection + (Math.random() - 0.5) * 0.3);
-                            }
-                        } else {
-                            showFeedback("LEFT!");
+                            setTimeout(() => {
+                                if (isBallInPlay && batState === 'idle') {
+                                    performShot(aiShotType, aiDirection + (Math.random() - 0.5) * 0.2);
+                                }
+                            }, delay);
                         }
-                    } else if (distX < 2.0) {
-                        // Wide but close enough to maybe edge?
-                        if (Math.random() < 0.3) {
-                            performShot('DRIVE', (ballBody.position.x - STRIKER_POS.x));
-                            showFeedback("EDGE!");
-                        } else {
-                            showFeedback("WIDE!");
-                        }
-                    } else {
-                        showFeedback("WIDE!");
                     }
                     clearInterval(checkInterval);
                 }
-            }, 20);
+            }, 10);
         }
 
         function performShot(type, customDirection) {
@@ -1067,11 +1057,12 @@
             scene.traverse(child => {
                 if (child.physicsBody) {
                     const b = child.physicsBody;
+                    b.mass = 0; // Back to static
+                    b.updateMassProperties();
                     b.position.set(b.initPosition.x, b.initPosition.y, b.initPosition.z);
                     b.quaternion.set(0, 0, 0, 1);
                     b.velocity.set(0,0,0);
                     b.angularVelocity.set(0,0,0);
-                    b.sleepState = CANNON.Body.SLEEPY; // Put to sleep until hit
                 }
             });
 
@@ -1092,7 +1083,8 @@
             
             if (currentInnings === 2) {
                 document.getElementById('target-ui').style.display = 'block';
-                document.getElementById('target-val').textContent = target;
+                const runsNeeded = target - score;
+                document.getElementById('target-val').textContent = target + " (NEEDS " + Math.max(0, runsNeeded) + ")";
             } else {
                 document.getElementById('target-ui').style.display = 'none';
             }
@@ -1208,18 +1200,23 @@
             document.getElementById('innings-overlay').style.display = 'none';
             document.getElementById('game-ui').style.display = 'block';
             
-            init();
+            // Ensure physics and scene are ready
+            if (!renderer) {
+                init();
+            } else {
+                // Just reset players for new innings
+                createPlayers();
+            }
 
-            currentBattingTeam = (currentInnings === 1) ? 
-                (userRole === 'BATTING' ? 'USER' : 'COMPUTER') : 
-                (userRole === 'BATTING' ? 'COMPUTER' : 'USER');
+            currentBattingTeam = (userRole === 'BATTING' ? 'USER' : 'COMPUTER');
 
-            // Reset scores for new innings
+            // Reset match variables
             score = 0;
             ballsBowled = 0;
             wickets = 0;
             isBallInPlay = false;
             isBallHit = false;
+            isGameOver = false;
 
             updateHUD();
             
@@ -1227,37 +1224,43 @@
                 document.getElementById('batting-controls').style.display = 'flex';
                 document.getElementById('bowling-controls').style.display = 'none';
                 cameraState = 'fixed';
+                setTimeout(bowl, 2000);
             } else {
                 document.getElementById('batting-controls').style.display = 'none';
                 document.getElementById('bowling-controls').style.display = 'flex';
                 cameraState = 'bowling_side';
-            }
-
-            if (userRole === 'BATTING') {
-                setTimeout(bowl, 2000);
+                // User must press Space to bowl
             }
         }
 
         function endGame() {
+            if (isGameOver) return;
             isGameOver = true;
-            document.getElementById('game-ui').style.display = 'none';
             
+            isBallInPlay = false;
+
             if (currentInnings === 1) {
                 target = score + 1;
-                currentInnings = 2;
-                userRole = (userRole === 'BATTING' ? 'BOWLING' : 'BATTING');
+                const prevTeam = currentBattingTeam;
                 
+                // Show break overlay
+                document.getElementById('game-ui').style.display = 'none';
                 document.getElementById('innings-overlay').style.display = 'flex';
                 document.getElementById('innings-status-text').textContent = 
-                    (currentBattingTeam === 'USER' ? "USER" : "COMPUTER") + 
-                    " scored " + score + ". Target is " + target;
+                    prevTeam + " scored " + score + ". Target is " + target;
+                
+                // Set up 2nd innings state
+                currentInnings = 2;
+                userRole = (userRole === 'BATTING' ? 'BOWLING' : 'BATTING');
             } else {
-                const winner = (currentBattingTeam === 'USER') ? 
-                    (score >= target ? "USER WON!" : "COMPUTER WON!") :
-                    (score >= target ? "COMPUTER WON!" : "USER WON!");
+                document.getElementById('game-ui').style.display = 'none';
+                
+                const winnerText = (currentBattingTeam === 'USER') ? 
+                    (score >= target ? "USER WON BY " + (10 - wickets) + " WICKETS!" : (score === target-1 ? "MATCH TIED!" : "COMPUTER WON BY " + (target - 1 - score) + " RUNS!")) :
+                    (score >= target ? "COMPUTER WON BY " + (10 - wickets) + " WICKETS!" : (score === target-1 ? "MATCH TIED!" : "USER WON BY " + (target - 1 - score) + " RUNS!"));
                 
                 document.getElementById('game-over-overlay').style.display = 'flex';
-                document.getElementById('game-over-status').textContent = winner;
+                document.getElementById('game-over-status').textContent = winnerText;
             }
         }
 
