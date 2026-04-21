@@ -1008,7 +1008,25 @@
             if (ballZ > STRIKER_POS.z + 1 && isBallInPlay && !isBallHit) {
                 // Wide check: Too high or too wide horizontally
                 const isTooHigh = ballBody.position.y > 2.5;
-                const isTooWide = Math.abs(ballBody.position.x) > PITCH_WIDTH / 2 + 0.1;
+                
+                // Realistic Wide Logic:
+                // Stricter on leg-side (behind the batsman) than off-side
+                const side = batsmanHand === 'RIGHT' ? 1 : -1;
+                // For Right Hand: Left (x < 0) is Leg side. Right (x > 0) is Off side.
+                // STRIKER_POS.x is around -0.5 for Right hander.
+                
+                let isTooWide = false;
+                const ballX = ballBody.position.x;
+                
+                if (batsmanHand === 'RIGHT') {
+                    // Right-hander leg side is negative X
+                    if (ballX < -0.6) isTooWide = true; // Very strict leg-side
+                    if (ballX > 1.3) isTooWide = true;  // Off-side wide
+                } else {
+                    // Left-hander leg side is positive X
+                    if (ballX > 0.6) isTooWide = true;  // Very strict leg-side
+                    if (ballX < -1.3) isTooWide = true; // Off-side wide
+                }
 
                 if (isTooHigh || isTooWide) {
                     handleWide();
