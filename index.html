@@ -806,21 +806,45 @@
                 const distX = Math.abs(ballBody.position.x - STRIKER_POS.x);
 
                 // Swing when ball is close, but only if it's reachable
-                if (distZ > -2.0 && distZ < 0 && batState === 'idle') {
-                    if (distX < 1.5) { // Reachable range
-                        let aiShotType = 'DRIVE';
-                        if (ballBody.position.y > 1.2) aiShotType = 'LOFT';
-                        else if (ballBody.position.y < 0.4) aiShotType = 'DEFEND';
-                        
-                        const aiDirection = (ballBody.position.x - STRIKER_POS.x) * 0.5; // Aim toward the ball
-                        performShot(aiShotType, aiDirection + (Math.random() - 0.5) * 0.5);
+                if (distZ > -2.2 && distZ < 0 && batState === 'idle') {
+                    if (distX < 1.2) { 
+                        // AI Decision Logic
+                        const rng = Math.random();
+                        if (rng > 0.1) { // 90% chance to swing
+                            let aiShotType = 'DRIVE';
+                            if (ballBody.position.y > 1.2) aiShotType = 'LOFT';
+                            else if (ballBody.position.y < 0.4) aiShotType = 'DEFEND';
+                            
+                            // Randomize AI quality
+                            const qualityRng = Math.random();
+                            let aiDirection = (ballBody.position.x - STRIKER_POS.x) * 0.8;
+                            
+                            if (qualityRng < 0.2) { // 20% chance of thick edge/mis-hit
+                                aiDirection += (Math.random() - 0.5) * 2.0; 
+                                showFeedback("MISTIMED!");
+                            } else if (qualityRng < 0.35) { // 15% chance of missing completely
+                                // Do nothing, let it go through
+                                showFeedback("BEATEN!");
+                            } else {
+                                performShot(aiShotType, aiDirection + (Math.random() - 0.5) * 0.3);
+                            }
+                        } else {
+                            showFeedback("LEFT!");
+                        }
+                    } else if (distX < 2.0) {
+                        // Wide but close enough to maybe edge?
+                        if (Math.random() < 0.3) {
+                            performShot('DRIVE', (ballBody.position.x - STRIKER_POS.x));
+                            showFeedback("EDGE!");
+                        } else {
+                            showFeedback("WIDE!");
+                        }
                     } else {
-                        // Let it go (Wide)
                         showFeedback("WIDE!");
                     }
                     clearInterval(checkInterval);
                 }
-            }, 30);
+            }, 20);
         }
 
         function performShot(type, customDirection) {
@@ -969,8 +993,11 @@
             }
             // Ball passed the striker
             if (ballZ > STRIKER_POS.z + 1 && isBallInPlay && !isBallHit) {
-                // Check if it was too high (Wide Bouncer)
-                if (ballBody.position.y > 2.5) {
+                // Wide check: Too high or too wide horizontally
+                const isTooHigh = ballBody.position.y > 2.5;
+                const isTooWide = Math.abs(ballBody.position.x) > PITCH_WIDTH / 2 + 0.1;
+
+                if (isTooHigh || isTooWide) {
                     handleWide();
                 } else {
                     // Keeper logic: collect ball
@@ -980,7 +1007,7 @@
                         showFeedback("COLLECTED!");
                         isBallHit = false;
                         setTimeout(resetBall, 1500);
-                    } else if (ballZ > PITCH_LENGTH / 2 + 6) {
+                    } else {
                         isBallHit = false;
                         resetBall();
                     }
@@ -1013,7 +1040,7 @@
             isBallHit = false;
             updateHUD();
             
-            // Reset stump physical positions
+            // Reset stump physical positions and stop them
             scene.traverse(child => {
                 if (child.physicsBody) {
                     const b = child.physicsBody;
@@ -1021,6 +1048,7 @@
                     b.quaternion.set(0, 0, 0, 1);
                     b.velocity.set(0,0,0);
                     b.angularVelocity.set(0,0,0);
+                    b.sleepState = CANNON.Body.SLEEPY; // Put to sleep until hit
                 }
             });
 
@@ -1067,10 +1095,15 @@
                 const targetPos = new THREE.Vector3(ballMesh.position.x, ballMesh.position.y + 4, ballMesh.position.z + 10);
                 camera.position.lerp(targetPos, 0.05);
                 camera.lookAt(ballMesh.position);
+            } else if (isBallHit && isBallInPlay) {
+                // Follow the ball after a hit even in bowling mode
+                const targetPos = new THREE.Vector3(ballMesh.position.x, ballMesh.position.y + 10, ballMesh.position.z + 20);
+                camera.position.lerp(targetPos, 0.03);
+                camera.lookAt(ballMesh.position);
             } else if (cameraState === 'bowling_side') {
                 const defaultPos = new THREE.Vector3(0, 4, -PITCH_LENGTH / 2 - 10);
                 camera.position.lerp(defaultPos, 0.05);
-                camera.lookAt(0, 1, 10); // Look towards the pitch/batsman
+                camera.lookAt(0, 1, 10);
             } else {
                 const defaultPos = new THREE.Vector3(0, 3, PITCH_LENGTH / 2 + 8);
                 camera.position.lerp(defaultPos, 0.05);
